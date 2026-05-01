@@ -1,13 +1,38 @@
 {
   "name": "hyper-shell-manager",
   "version": "0.1.0",
-  "main": "index.js",
   "description": "Multiple shell profile manager for Hyper",
+  "main": "index.js",
   "keywords": [
     "hyper",
     "hyper-plugin",
     "shell",
     "profile",
-    "terminal"
+    "terminal",
+    "shell-manager",
+    "terminal-profile",
+    "hyper-terminal"
+  ],
+  "author": "hhy",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/huanghanye0/hyper-shell-manager.git"
+  },
+  "bugs": {
+    "url": "https://github.com/huanghanye0/hyper-shell-manager/issues"
+  },
+  "homepage": "https://github.com/huanghanye0/hyper-shell-manager#readme",
+  "peerDependencies": {
+    "hyper": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=12.0.0"
+  },
+  "files": [
+    "index.js",
+    "README.md",
+    "README_CN.md",
+    "LICENSE"
   ]
 }
