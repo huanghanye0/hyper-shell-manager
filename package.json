@@ -1,0 +1,13 @@
+{
+  "name": "hyper-shell-manager",
+  "version": "0.1.0",
+  "main": "index.js",
+  "description": "Multiple shell profile manager for Hyper",
+  "keywords": [
+    "hyper",
+    "hyper-plugin",
+    "shell",
+    "profile",
+    "terminal"
+  ]
+}
