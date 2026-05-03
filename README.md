@@ -299,10 +299,6 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Author
-
-Created for the Hyper community.
-
 ## Support
 
 If you encounter any issues or have suggestions, please [open an issue](https://github.com/your-username/hyper-shell-manager/issues) on GitHub.
