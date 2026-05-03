@@ -299,10 +299,6 @@ module.exports = {
 
 MIT 许可证 - 详情请查看 [LICENSE](LICENSE) 文件。
 
-## 作者
-
-为 Hyper 社区创建。
-
 ## 支持
 
 如果您遇到任何问题或有建议，请在 GitHub 上 [提交 issue](https://github.com/your-username/hyper-shell-manager/issues)。
