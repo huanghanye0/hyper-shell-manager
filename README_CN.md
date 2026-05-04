@@ -285,20 +285,7 @@ module.exports = {
 - 验证 `ui.position` 值没有将其放置在屏幕外
 - 尝试调整 `top`、`right` 或 `left` 值
 
-## 贡献
-
-欢迎贡献代码！请随时提交 Pull Request。
-
-1. Fork 本仓库
-2. 创建功能分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 打开 Pull Request
-
 ## 许可证
 
 MIT 许可证 - 详情请查看 [LICENSE](LICENSE) 文件。
 
-## 支持
-
-如果您遇到任何问题或有建议，请在 GitHub 上 [提交 issue](https://github.com/your-username/hyper-shell-manager/issues)。
