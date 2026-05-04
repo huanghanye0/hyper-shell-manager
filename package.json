@@ -1,6 +1,6 @@
 {
   "name": "hyper-shell-manager",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Multiple shell profile manager for Hyper",
   "main": "index.js",
   "keywords": [
