@@ -2,7 +2,7 @@
 
 [English Documentation](./README.md)
 
-一个Hyper插件用于管理多个 shell 配置文件，支持快速切换和自定义设置。
+一个 Hyper 插件用于管理多个 shell 配置文件，支持下拉切换、快捷键直接打开指定 shell 的新标签页，以及自定义设置。
 
 ## 功能特性
 
@@ -10,6 +10,7 @@
 - 🎨 **可自定义界面** - 支持主题（system/dark/light），可自定义位置和宽度
 - 💾 **状态持久化** - 记住上次激活的配置文件，跨会话保持
 - ⚡ **快速切换** - 集成在 Hyper UI 中的下拉选择器
+- ⌨️ **快捷键新标签页** - 可为每个 shell 配置绑定快捷键，按下后直接打开对应 shell 的新标签页
 - 🌍 **环境变量** - 为每个配置文件设置自定义环境变量
 - 📁 **灵活配置** - 可在 `.hyper.js` 或独立配置文件中配置
 
@@ -61,6 +62,7 @@ module.exports = {
           label: 'Git Bash',
           shell: 'C:\\Program Files\\Git\\bin\\bash.exe',
           shellArgs: ['-i', '-l'],
+          hotkey: 'Ctrl + Alt + G',
           env: {
             TERM: 'xterm-256color'
           }
@@ -69,6 +71,7 @@ module.exports = {
           label: 'PowerShell',
           shell: 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
           shellArgs: [],
+          hotkey: 'Ctrl + Alt + P',
           env: {}
         },
         cmd: {
@@ -83,6 +86,12 @@ module.exports = {
           shellArgs: ['-d', 'Ubuntu'],
           env: {}
         }
+      },
+
+      // 也可以集中配置快捷键（可选，会覆盖 profile.hotkey）
+      hotkeys: {
+        gitbash: 'Ctrl + Alt + G',
+        powershell: 'Ctrl + Alt + P'
       },
       
       // UI 自定义（可选）
@@ -109,6 +118,7 @@ module.exports = {
 | `label` | String | 否 | 配置的显示名称（默认为配置键名） |
 | `shell` | String | 是 | Shell 可执行文件的绝对路径 |
 | `shellArgs` | Array | 否 | 传递给 shell 的命令行参数数组 |
+| `hotkey` | String | 否 | 直接打开该配置新标签页的快捷键。请写完整形式，例如 `Ctrl + Alt + G`、`Ctrl + Alt + P`、`Ctrl + Alt + K`。macOS 会自动显示并匹配为 `Cmd + Option + 按键`。 |
 | `env` | Object | 否 | 为此配置设置的环境变量 |
 
 ### UI 配置说明
@@ -146,8 +156,15 @@ module.exports = {
 ## 使用方法
 
 1. **选择配置文件**：使用 Hyper 窗口中显示的下拉选择器在已配置的 shell 配置文件之间切换。
-2. **自动激活**：插件会记住您上次选择的配置文件，并在启动时激活它。
-3. **应用更改**：从下拉框中选择新配置文件将重新加载终端并应用新的 shell 配置。
+2. **使用快捷键打开新标签页**：在 profile 中添加 `hotkey` 后，在 Hyper 中按下对应快捷键会立即新建一个标签页，并让该标签页直接使用对应的 `shell`、`shellArgs` 和 `env`。也可以使用顶层 `hotkeys` 映射，例如 `hotkeys: { gitbash: 'Ctrl + Alt + G', powershell: 'Ctrl + Alt + P', wsl: 'Ctrl + Alt + K' }`。
+3. **自动激活**：插件会记住您上次选择的配置文件，并在启动时激活它。
+4. **应用更改**：从下拉框选择 profile 仍会切换默认 active profile 并重新加载 Hyper 配置；快捷键不会先切换默认 profile，而是直接打开一个对应 shell 的新标签页。
+
+### 快捷键语法
+
+快捷键支持两种写法：在 profile 内写 `hotkey`，或在 `hyperShellManager.hotkeys` 中集中配置。快捷键触发后会直接打开新标签页，不会等待你再手动新建 tab。
+
+快捷键固定为 `Ctrl + Alt + 字母`；macOS 会自动适配为 `Cmd + Option + 字母`。配置时请写完整形式，例如 `Ctrl + Alt + G`、`Ctrl + Alt + P`、`Ctrl + Alt + K`、`Ctrl + Alt + U`，界面提示也会显示完整组合键。数字键不再支持，例如 `Ctrl + Alt + 1` 会被忽略；也不支持 `Shift`、`Mod`、`Cmd` 等其他组合，以避免和 Hyper / 系统快捷键冲突。
 
 ## 配置示例
 
@@ -161,24 +178,28 @@ hyperShellManager: {
       label: 'Git Bash',
       shell: 'C:\\Program Files\\Git\\bin\\bash.exe',
       shellArgs: ['-i', '-l'],
+      hotkey: 'Ctrl + Alt + G',
       env: { TERM: 'xterm-256color' }
     },
     pwsh: {
       label: 'PowerShell 7',
       shell: 'C:\\Program Files\\PowerShell\\7\\pwsh.exe',
       shellArgs: ['-NoLogo'],
+      hotkey: 'Ctrl + Alt + P',
       env: {}
     },
     cmd: {
       label: 'CMD',
       shell: 'C:\\Windows\\System32\\cmd.exe',
       shellArgs: [],
+      hotkey: 'Ctrl + Alt + K',
       env: {}
     },
     wsl: {
       label: 'Ubuntu (WSL)',
       shell: 'C:\\Windows\\System32\\wsl.exe',
       shellArgs: ['-d', 'Ubuntu-20.04'],
+      hotkey: 'Ctrl + Alt + U',
       env: { WSLENV: 'PATH/l' }
     }
   },

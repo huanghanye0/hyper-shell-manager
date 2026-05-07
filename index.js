@@ -7,9 +7,13 @@ const path = require("path");
 const PLUGIN_NAME = "hyper-shell-manager";
 const CONFIG_KEY = "hyperShellManager";
 const RELOAD_MARKER_PREFIX = "// hyper-shell-manager reload:";
+const RPC_OPEN_PROFILE_TAB = `${PLUGIN_NAME}:open-profile-tab`;
+const PENDING_SESSION_PROFILE_TTL_MS = 5000;
 
 let appRef = null;
 let lastConfig = null;
+let pendingSessionProfiles = [];
+let envProfileNameForSession = null;
 
 function log(...args) {
   console.log(`[${PLUGIN_NAME}]`, ...args);
@@ -184,6 +188,7 @@ function normalizeProfile(name, profile) {
     shell: profile.shell,
     shellArgs: Array.isArray(profile.shellArgs) ? profile.shellArgs : [],
     env: profile.env && typeof profile.env === "object" ? profile.env : {},
+    hotkey: typeof profile.hotkey === "string" ? profile.hotkey : "",
   };
 }
 
@@ -246,6 +251,376 @@ function getUiConfig(config) {
     top: typeof ui.top === "string" ? ui.top : "9px",
     right: typeof ui.right === "string" ? ui.right : "156px",
     left: typeof ui.left === "string" ? ui.left : "",
+  };
+}
+
+
+function isMacPlatform() {
+  return process.platform === "darwin";
+}
+
+function normalizeHotkeyKey(key) {
+  if (typeof key !== "string") {
+    return "";
+  }
+
+  const normalized = key.trim().toLowerCase();
+
+  if (!normalized) {
+    return "";
+  }
+
+  const aliases = {
+    " ": "space",
+    spacebar: "space",
+    space: "space",
+    esc: "esc",
+    escape: "esc",
+    return: "enter",
+    enter: "enter",
+    plus: "+",
+    add: "+",
+    minus: "-",
+    subtract: "-",
+    dash: "-",
+    arrowup: "up",
+    up: "up",
+    arrowdown: "down",
+    down: "down",
+    arrowleft: "left",
+    left: "left",
+    arrowright: "right",
+    right: "right",
+    del: "delete",
+    delete: "delete",
+  };
+
+  if (/^[a-z]$/.test(normalized)) {
+    return normalized;
+  }
+
+  if (/^key[a-z]$/.test(normalized)) {
+    return normalized.slice(3);
+  }
+
+
+  if (/^f([1-9]|1[0-9]|2[0-4])$/.test(normalized)) {
+    return normalized;
+  }
+
+  return aliases[normalized] || "";
+}
+
+function isPrimaryModifierPart(part) {
+  return (
+    part === "ctrl" ||
+    part === "control" ||
+    part === "cmdorctrl" ||
+    part === "commandorcontrol" ||
+    (isMacPlatform() &&
+      (part === "cmd" || part === "command" || part === "meta"))
+  );
+}
+
+function isAltModifierPart(part) {
+  return part === "alt" || part === "option" || part === "opt";
+}
+
+function isUnsupportedModifierPart(part) {
+  return (
+    part === "shift" ||
+    part === "meta" ||
+    part === "cmd" ||
+    part === "command" ||
+    part === "super" ||
+    part === "win" ||
+    part === "windows" ||
+    part === "mod"
+  );
+}
+
+function parseHotkey(hotkey) {
+  if (typeof hotkey !== "string" || !hotkey.trim()) {
+    return null;
+  }
+
+  const parts = hotkey
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .split("+")
+    .filter(Boolean);
+
+  let hasPrimaryModifier = false;
+  let hasAltModifier = false;
+  let hasAnyModifier = false;
+  let key = "";
+
+  for (const part of parts) {
+    if (isPrimaryModifierPart(part)) {
+      hasPrimaryModifier = true;
+      hasAnyModifier = true;
+      continue;
+    }
+
+    if (isAltModifierPart(part)) {
+      hasAltModifier = true;
+      hasAnyModifier = true;
+      continue;
+    }
+
+    if (isUnsupportedModifierPart(part)) {
+      return null;
+    }
+
+    const normalizedKey = normalizeHotkeyKey(part);
+
+    if (!normalizedKey || !/^[a-z]$/.test(normalizedKey)) {
+      return null;
+    }
+
+    key = normalizedKey;
+  }
+
+  if (!key) {
+    return null;
+  }
+
+  // The plugin intentionally supports only Ctrl+Alt+<letter> as user-facing
+  // syntax. On macOS this same config is matched as Cmd+Option+<letter>.
+  // A bare letter like "p" is accepted as shorthand for that fixed combo.
+  // Number keys such as Ctrl+Alt+1 are intentionally not supported.
+  if (hasAnyModifier && (!hasPrimaryModifier || !hasAltModifier)) {
+    return null;
+  }
+
+  return { key };
+}
+
+function formatHotkeyKeyLabel(key) {
+  const normalized = normalizeHotkeyKey(key);
+
+  if (!normalized) {
+    return "";
+  }
+
+  const labels = {
+    space: "Space",
+    esc: "Esc",
+    enter: "Enter",
+    up: "↑",
+    down: "↓",
+    left: "←",
+    right: "→",
+    delete: "Delete",
+  };
+
+  if (labels[normalized]) {
+    return labels[normalized];
+  }
+
+  if (/^f([1-9]|1[0-9]|2[0-4])$/.test(normalized)) {
+    return normalized.toUpperCase();
+  }
+
+  if (/^[a-z]$/.test(normalized)) {
+    return normalized.toUpperCase();
+  }
+
+  return normalized;
+}
+
+function formatHotkey(hotkey) {
+  const parsed = parseHotkey(hotkey);
+
+  if (!parsed) {
+    return "";
+  }
+
+  const modifiers = isMacPlatform() ? ["Cmd", "Option"] : ["Ctrl", "Alt"];
+  return [...modifiers, formatHotkeyKeyLabel(parsed.key)].join(" + ");
+}
+
+function getEventKey(event) {
+  if (!event || typeof event.key !== "string") {
+    return "";
+  }
+
+  return normalizeHotkeyKey(event.key);
+}
+
+function getEventCodeKey(event) {
+  if (!event || typeof event.code !== "string") {
+    return "";
+  }
+
+  return normalizeHotkeyKey(event.code);
+}
+
+function getEventLegacyKey(event) {
+  if (!event) {
+    return "";
+  }
+
+  const code = Number(event.which || event.keyCode || 0);
+
+  if (code >= 65 && code <= 90) {
+    return String.fromCharCode(code).toLowerCase();
+  }
+
+  return "";
+}
+
+function getEventKeyCandidates(event) {
+  return [getEventKey(event), getEventCodeKey(event), getEventLegacyKey(event)]
+    .filter(Boolean)
+    .filter((value, index, list) => list.indexOf(value) === index);
+}
+
+function hotkeyMatchesEvent(hotkey, event) {
+  const parsed = parseHotkey(hotkey);
+
+  if (!parsed || !event || event.isComposing || event.repeat) {
+    return false;
+  }
+
+  const primaryModifierDown = isMacPlatform()
+    ? Boolean(event.metaKey) && !Boolean(event.ctrlKey)
+    : Boolean(event.ctrlKey) && !Boolean(event.metaKey);
+
+  if (!primaryModifierDown || !Boolean(event.altKey) || Boolean(event.shiftKey)) {
+    return false;
+  }
+
+  return getEventKeyCandidates(event).includes(parsed.key);
+}
+
+function getHotkeyMap(config) {
+  const managerConfig = getManagerConfig(config);
+  const { profiles, names } = getProfiles(config);
+  const hotkeys = {};
+
+  names.forEach((name) => {
+    if (profiles[name] && profiles[name].hotkey) {
+      hotkeys[name] = profiles[name].hotkey;
+    }
+  });
+
+  if (managerConfig.hotkeys && typeof managerConfig.hotkeys === "object") {
+    Object.keys(managerConfig.hotkeys).forEach((name) => {
+      const hotkey = managerConfig.hotkeys[name];
+
+      if (profiles[name] && typeof hotkey === "string" && hotkey.trim()) {
+        hotkeys[name] = hotkey;
+      }
+    });
+  }
+
+  return hotkeys;
+}
+
+
+function enqueuePendingSessionProfile(name) {
+  const token = `${Date.now()}:${Math.random().toString(16).slice(2)}`;
+
+  pendingSessionProfiles.push({
+    token,
+    name,
+    expiresAt: Date.now() + PENDING_SESSION_PROFILE_TTL_MS,
+  });
+
+  return token;
+}
+
+function removePendingSessionProfile(token) {
+  pendingSessionProfiles = pendingSessionProfiles.filter(
+    (item) => item.token !== token,
+  );
+}
+
+function consumePendingSessionProfile() {
+  const now = Date.now();
+
+  pendingSessionProfiles = pendingSessionProfiles.filter(
+    (item) => item.expiresAt > now,
+  );
+
+  const item = pendingSessionProfiles.shift();
+  return item ? item.name : null;
+}
+
+function openProfileInNewTab(win, name, activeUid) {
+  const { profiles } = getProfiles();
+  const profile = profiles[name];
+
+  if (!profile) {
+    log("unknown profile for new tab:", name);
+    return false;
+  }
+
+  if (!win || !win.rpc || typeof win.rpc.emit !== "function") {
+    log("window rpc unavailable, cannot open profile tab:", name);
+    return false;
+  }
+
+  const token = enqueuePendingSessionProfile(name);
+
+  try {
+    const payload = activeUid ? { activeUid } : {};
+    win.rpc.emit("termgroup add req", payload);
+    log("new tab requested:", name, profile.shell);
+    return true;
+  } catch (error) {
+    removePendingSessionProfile(token);
+    log("failed to request new tab:", error);
+    return false;
+  }
+}
+
+function cleanupMainWindow(win) {
+  if (!win || typeof win.__hyperShellManagerMainCleanup !== "function") {
+    return;
+  }
+
+  try {
+    win.__hyperShellManagerMainCleanup();
+  } catch (_) {
+    // ignore
+  }
+
+  win.__hyperShellManagerMainCleanup = null;
+}
+
+function registerWindowRpc(win) {
+  if (!win || !win.rpc || typeof win.rpc.on !== "function") {
+    return;
+  }
+
+  cleanupMainWindow(win);
+
+  const onOpenProfileTab = (payload) => {
+    const data = payload && typeof payload === "object" ? payload : {};
+    const name = data.profile || data.name;
+
+    if (typeof name !== "string" || !name) {
+      log("missing profile name for new tab request");
+      return;
+    }
+
+    openProfileInNewTab(win, name, data.activeUid);
+  };
+
+  win.rpc.on(RPC_OPEN_PROFILE_TAB, onOpenProfileTab);
+
+  win.__hyperShellManagerMainCleanup = () => {
+    if (win.rpc && typeof win.rpc.removeListener === "function") {
+      win.rpc.removeListener(RPC_OPEN_PROFILE_TAB, onOpenProfileTab);
+      return;
+    }
+
+    if (win.rpc && typeof win.rpc.off === "function") {
+      win.rpc.off(RPC_OPEN_PROFILE_TAB, onOpenProfileTab);
+    }
   };
 }
 
@@ -338,6 +713,7 @@ function injectSwitcher(win) {
 
   const { profiles, names, activeName } = getProfiles();
   const ui = getUiConfig();
+  const hotkeys = getHotkeyMap();
 
   if (!names || names.length === 0) {
     log(`no ${CONFIG_KEY}.profiles found, switcher hidden`);
@@ -612,12 +988,22 @@ function injectSwitcher(win) {
 
   const select = doc.createElement("select");
   select.id = "hyper-shell-manager-select";
-  select.title = "Switch shell profile; effective for new tabs or windows";
+  select.title = "Switch default shell profile; hotkeys open a new tab with the matching shell";
 
   names.forEach((name) => {
     const option = doc.createElement("option");
+    const hotkey = hotkeys[name];
+
+    const label = profiles[name].label || name;
+    const displayHotkey = formatHotkey(hotkey);
+
     option.value = name;
-    option.textContent = profiles[name].label || name;
+    option.textContent = displayHotkey ? `${label} · ${displayHotkey}` : label;
+
+    if (hotkey) {
+      option.title = displayHotkey ? `${label} (${displayHotkey})` : label;
+    }
+
     select.appendChild(option);
   });
 
@@ -664,26 +1050,111 @@ function injectSwitcher(win) {
     }
   };
 
-  const onChangeSelect = () => {
-    const name = select.value;
+  const showTip = (message) => {
+    tip.textContent = message;
+    tip.classList.add("show");
+
+    if (tipTimer) {
+      clearTimeout(tipTimer);
+    }
+
+    tipTimer = setTimeout(() => {
+      tip.classList.remove("show");
+      tipTimer = null;
+    }, 1800);
+  };
+
+  const switchToProfile = (name) => {
     const profile = profiles[name];
 
+    if (!profile) {
+      return;
+    }
+
     closeArrow();
+
+    if (select.value !== name) {
+      select.value = name;
+    }
 
     const ok = setActiveProfile(name);
 
     if (ok) {
-      tip.textContent = `Switched to ${profile.label || name}, effective for new tabs/windows.`;
-      tip.classList.add("show");
+      showTip(
+        `Switched to ${profile.label || name}, effective for new tabs/windows.`,
+      );
+    }
+  };
 
-      if (tipTimer) {
-        clearTimeout(tipTimer);
+  const getActiveUid = () => {
+    try {
+      const store = win.store;
+      const state = store && typeof store.getState === "function"
+        ? store.getState()
+        : null;
+      const termGroups = state && state.termGroups;
+
+      if (!termGroups) {
+        return null;
       }
 
-      tipTimer = setTimeout(() => {
-        tip.classList.remove("show");
-        tipTimer = null;
-      }, 1800);
+      if (typeof termGroups.get === "function") {
+        const activeRootGroup = termGroups.get("activeRootGroup");
+        const activeSessions = termGroups.get("activeSessions");
+
+        return activeSessions && activeRootGroup
+          ? activeSessions[activeRootGroup]
+          : null;
+      }
+
+      return termGroups.activeSessions && termGroups.activeRootGroup
+        ? termGroups.activeSessions[termGroups.activeRootGroup]
+        : null;
+    } catch (_) {
+      return null;
+    }
+  };
+
+  const requestNewTabForProfile = (name) => {
+    const profile = profiles[name];
+
+    if (!profile) {
+      return;
+    }
+
+    closeArrow();
+
+    if (win.rpc && typeof win.rpc.emit === "function") {
+      win.rpc.emit(RPC_OPEN_PROFILE_TAB, {
+        profile: name,
+        activeUid: getActiveUid(),
+      });
+
+      showTip(`Opening new ${profile.label || name} tab (${formatHotkey(hotkeys[name]) || "hotkey"}).`);
+      return;
+    }
+
+    showTip("Unable to open a profile tab: Hyper RPC is unavailable.");
+  };
+
+  const onChangeSelect = () => {
+    switchToProfile(select.value);
+  };
+
+  const onKeyDownDocument = (event) => {
+    if (!event || event.defaultPrevented) {
+      return;
+    }
+
+    const entries = Object.keys(hotkeys);
+
+    for (const name of entries) {
+      if (hotkeyMatchesEvent(hotkeys[name], event)) {
+        event.preventDefault();
+        event.stopPropagation();
+        requestNewTabForProfile(name);
+        break;
+      }
     }
   };
 
@@ -693,6 +1164,7 @@ function injectSwitcher(win) {
   select.addEventListener("keydown", onKeyDownSelect);
   select.addEventListener("change", onChangeSelect);
   doc.addEventListener("pointerdown", onPointerDownDocument);
+  doc.addEventListener("keydown", onKeyDownDocument, true);
 
   selectWrap.appendChild(select);
   selectWrap.appendChild(arrow);
@@ -715,6 +1187,7 @@ function injectSwitcher(win) {
     select.removeEventListener("keydown", onKeyDownSelect);
     select.removeEventListener("change", onChangeSelect);
     doc.removeEventListener("pointerdown", onPointerDownDocument);
+    doc.removeEventListener("keydown", onKeyDownDocument, true);
     removeOldDom(doc);
   };
 
@@ -759,9 +1232,48 @@ function applyProfileToConfig(config) {
   });
 }
 
+exports.decorateSessionClass = (Session) => {
+  return class HyperShellManagerSession extends Session {
+    constructor(options) {
+      const profileName = consumePendingSessionProfile();
+      const { profiles } = getProfiles();
+      const profile = profileName ? profiles[profileName] : null;
+
+      if (profile) {
+        const nextOptions = Object.assign({}, options || {}, {
+          shell: profile.shell,
+          shellArgs: profile.shellArgs,
+        });
+
+        envProfileNameForSession = profileName;
+
+        try {
+          super(nextOptions);
+        } finally {
+          envProfileNameForSession = null;
+        }
+
+        this.hyperShellManagerProfile = profileName;
+        return;
+      }
+
+      super(options);
+    }
+  };
+};
+
 exports.decorateConfig = (config) => applyProfileToConfig(config);
 
 exports.decorateEnv = (env) => {
+  if (envProfileNameForSession) {
+    const { profiles } = getProfiles();
+    const profile = profiles[envProfileNameForSession];
+
+    if (profile && profile.env) {
+      return Object.assign({}, env || {}, profile.env);
+    }
+  }
+
   const { activeProfile } = getProfiles();
 
   if (!activeProfile || !activeProfile.env) {
@@ -780,6 +1292,8 @@ exports.onRendererWindow = (win) => {
 };
 
 exports.onWindow = (win) => {
+  registerWindowRpc(win);
+
   if (win && win.document) {
     scheduleInjectSwitcher(win);
   }
